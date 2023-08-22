@@ -1,6 +1,9 @@
 .o_dashboard {
     height: 100%;
     overflow: auto;
+    .o_search_panel {
+        display: none !important;
+    }
 }
 
 .o-dashboard-layout {
