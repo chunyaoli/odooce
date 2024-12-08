@@ -60,7 +60,7 @@
             <field name="full_name">Chinese yuan</field>
             <field name="symbol">¥</field>
             <field name="rounding">0.01</field>
-            <field name="active" eval="False"/>
+            <field name="active" eval="True"/>
             <field name="currency_unit_label">Yuan</field>
             <field name="currency_subunit_label">Fen</field>
             <field name="position">before</field>
