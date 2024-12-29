@@ -295,6 +295,25 @@
                         ":has(.checkbox:has(label:contains('Wiko Stairway')):has(input[type='checkbox'][required]))",
             run: function () {},
         },
+        // Check conditional visibility for the relational fields
+        ...selectButtonByData("data-set-visibility='conditional'"),
+        ...selectButtonByData("data-set-visibility-dependency='recipient_ids'"),
+        ...selectButtonByText("Is not equal to"),
+        ...selectButtonByText("Mitchell Admin"),
+        ...wTourUtils.clickOnSave(),
+        {
+            content: "Check 'products' field is visible.",
+            trigger: `iframe .s_website_form:has(${triggerFieldByLabel("Products")}:visible)`,
+            isCheck: true,
+        }, {
+            content: "choose the option 'Mitchell Admin' of partner.",
+            trigger: "iframe .checkbox:has(label:contains('Mitchell Admin')) input[type='checkbox']",
+        }, {
+            content: "Check 'products' field is not visible.",
+            trigger: "iframe .s_website_form" +`:has(${triggerFieldByLabel("Products")}:not(:visible))`,
+            isCheck: true,
+        },
+        ...wTourUtils.clickOnEditAndWaitEditMode(),
 
         ...addCustomField('selection', 'radio', 'Service', true),
         {
@@ -319,6 +338,16 @@
         }, {
             content: "Mark the field as not required",
             trigger: 'we-button[data-name="required_opt"] we-checkbox',
+            run: function () {
+                // We need this 'setTimeout' to ensure that the 'blur' event of
+                // the input has enough time to be executed. Without it, the
+                // click on the 'we-checkbox' takes priority, and the 'blur'
+                // event is not executed (see the '_onListItemBlurInput'
+                // function of the 'we-list' widget)."
+                setTimeout(() => {
+                    this.$anchor[0].click();
+                }, 500);
+            },
         }, {
             content: "Check the resulting field",
             trigger: "iframe .s_website_form_field.s_website_form_custom:not(.s_website_form_required)" +
@@ -365,10 +394,15 @@
             content: "Check that the input value is the full option value",
             trigger: 'we-list table input:eq(3)',
             run: () => {
-                const addedOptionEl = document.querySelector('iframe.o_iframe').contentDocument.querySelector('.s_website_form_field select option[value="44 - UK"]');
-                if (!addedOptionEl) {
-                    console.error('The number option was not correctly added');
-                }
+                // We need this 'setTimeout' to ensure that the 'input' event of
+                // the input has enough time to be executed (see the
+                // '_onListItemBlurInput' function of the 'we-list' widget).
+                setTimeout(() => {
+                    const addedOptionEl = document.querySelector('iframe.o_iframe').contentDocument.querySelector('.s_website_form_field select option[value="44 - UK"]');
+                    if (!addedOptionEl) {
+                        console.error('The number option was not correctly added');
+                    }
+                }, 500);
             },
         }, {
             content: "Check the resulting snippet",
@@ -843,13 +877,15 @@
         },
         {
             content: "Click on the text inside the dropped form column",
+            extra_trigger: "iframe section.s_website_form .col-lg-4[contenteditable=true]",
             trigger: "iframe section.s_website_form h3.card-title",
             run: "dblclick",
         },
-        {   // Simulate a user interaction with the editable content.
+        {
+            // Simulate a user interaction with the editable content.
             content: "Update the text inside the form column",
             trigger: "iframe section.s_website_form h3.card-title",
-            run: "keydown 65 66 67",
+            run: "text ABC",
         },
         {
             content: "Check that the new text value was correctly set",
@@ -861,6 +897,23 @@
             run: "click",
         },
         ...wTourUtils.clickOnSave(),
+    ]);
+
+    wTourUtils.registerWebsitePreviewTour("website_form_nested_forms", {
+        test: true,
+        url: "/my/account",
+        edition: true,
+    },
+    () => [
+        {
+            ...wTourUtils.dragNDrop({ id: "s_website_form", name: "Form" }),
+            run: "drag_and_drop_native iframe #wrap .o_portal_details",
+        },
+        {
+            content: "Check the form was not dropped into another form",
+            trigger: "iframe form:not(:has([data-snippet='s_website_form']))",
+            isCheck: true,
+        },
     ]);
 
     wTourUtils.registerWebsitePreviewTour("website_form_special_characters", {

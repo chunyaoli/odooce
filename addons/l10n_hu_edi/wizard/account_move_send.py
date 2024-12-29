@@ -1,7 +1,7 @@
 import time
 from datetime import timedelta
 
-from odoo import api, fields, models
+from odoo import api, fields, models, _
 from odoo.addons.l10n_hu_edi.models.l10n_hu_edi_connection import L10nHuEdiConnection
 
 
@@ -9,7 +9,7 @@ class AccountMoveSend(models.TransientModel):
     _inherit = 'account.move.send'
 
     l10n_hu_edi_actionable_errors = fields.Json(
-        compute='_compute_l10n_hu_edi_enable_nav_30'
+        compute='_compute_l10n_hu_edi_actionable_errors'
     )
     l10n_hu_edi_enable_nav_30 = fields.Boolean(
         compute='_compute_l10n_hu_edi_enable_nav_30'
@@ -36,18 +36,29 @@ class AccountMoveSend(models.TransientModel):
     def _compute_l10n_hu_edi_enable_nav_30(self):
         for wizard in self:
             enabled_moves = wizard.move_ids.filtered(lambda m: 'upload' in m._l10n_hu_edi_get_valid_actions())._origin
-            if wizard.mode in ('invoice_single', 'invoice_multi') and enabled_moves:
-                wizard.l10n_hu_edi_enable_nav_30 = True
-                wizard.l10n_hu_edi_actionable_errors = enabled_moves._l10n_hu_edi_check_invoices()
+            wizard.l10n_hu_edi_enable_nav_30 = wizard.mode in ('invoice_single', 'invoice_multi') and enabled_moves
 
-            else:
-                wizard.l10n_hu_edi_enable_nav_30 = False
-                wizard.l10n_hu_edi_actionable_errors = False
-
-    @api.depends('l10n_hu_edi_enable_nav_30', 'l10n_hu_edi_actionable_errors')
+    @api.depends('l10n_hu_edi_enable_nav_30')
     def _compute_l10n_hu_edi_checkbox_nav_30(self):
         for wizard in self:
             wizard.l10n_hu_edi_checkbox_nav_30 = wizard.l10n_hu_edi_enable_nav_30
+
+    @api.depends('l10n_hu_edi_enable_nav_30', 'l10n_hu_edi_checkbox_nav_30', 'move_ids')
+    def _compute_l10n_hu_edi_actionable_errors(self):
+        for wizard in self:
+            if wizard.l10n_hu_edi_enable_nav_30:
+                enabled_moves = wizard.move_ids.filtered(lambda m: 'upload' in m._l10n_hu_edi_get_valid_actions())._origin
+                actionable_errors = enabled_moves._l10n_hu_edi_check_invoices()
+
+                if enabled_moves and not wizard.l10n_hu_edi_checkbox_nav_30:
+                    actionable_errors['checkbox_not_ticked'] = {
+                        'message': _("Invoices issued in Hungary must, with few exceptions, be reported to the NAV's Online-Invoice system.")
+                    }
+
+                wizard.l10n_hu_edi_actionable_errors = actionable_errors
+
+            else:
+                wizard.l10n_hu_edi_actionable_errors = False
 
     # -------------------------------------------------------------------------
     # BUSINESS ACTIONS
@@ -61,6 +72,15 @@ class AccountMoveSend(models.TransientModel):
             return super()._need_invoice_document(invoice)
         else:
             return invoice._l10n_hu_edi_get_valid_actions()
+
+    @api.model
+    def _prepare_invoice_pdf_report(self, invoice, invoice_data): 
+        # EXTENDS 'account'
+        # If we want to re-generate the PDF, we need to unlink the previous one.
+        if invoice.country_code == 'HU':
+            invoice.invoice_pdf_report_file = False
+            invoice.invoice_pdf_report_id = False
+        return super()._prepare_invoice_pdf_report(invoice, invoice_data)
 
     @api.model
     def _call_web_service_before_invoice_pdf_render(self, invoices_data):
@@ -116,20 +136,9 @@ class AccountMoveSend(models.TransientModel):
             blocking_level = invoice.l10n_hu_edi_messages.get('blocking_level')
             if blocking_level == 'error':
                 invoices_data[invoice]['error'] = invoice.l10n_hu_edi_messages
-            elif blocking_level == 'error_but_continue':
-                invoices_data[invoice]['nav_30_error_but_continue'] = invoice.l10n_hu_edi_messages
 
         if self._can_commit():
             self.env.cr.commit()
-
-    @api.model
-    def _link_invoice_documents(self, invoice, invoice_data):
-        # EXTENDS 'account'
-        super()._link_invoice_documents(invoice, invoice_data)
-        # If we have a non-blocking error (intermediate non-confirmed state), we want to first link the PDF,
-        # and then make it a blocking error, so that an e-mail doesn't get sent to the customer.
-        if invoice_data.get('nav_30_error_but_continue'):
-            invoice_data['error'] = invoice_data.pop('nav_30_error_but_continue')
 
     @api.model
     def _l10n_hu_edi_cron_update_status(self):

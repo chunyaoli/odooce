@@ -764,6 +764,71 @@ class TestStockValuationWithCOA(AccountTestInvoicingCommon):
         self.assertAlmostEqual(picking_aml.amount_currency, -20, msg="credit value for stock should be equal to the standard price of the product.")
         self.assertAlmostEqual(diff_aml.amount_currency, -80, msg="credit value for price difference")
 
+    def test_bill_on_ordered_qty_valuation_multicurrency(self):
+        """
+            Product with an invoice policy on ordered quantity should keep the valuation
+            of the bill with the exchange rate at the bill date
+        """
+        company = self.env.user.company_id
+        company.anglo_saxon_accounting = True
+        company.currency_id = self.usd_currency
+
+        date_po = '1993-07-18'
+
+        self.product1.product_tmpl_id.categ_id.property_cost_method = 'average'
+        self.product1.product_tmpl_id.categ_id.property_valuation = 'real_time'
+        self.product1.purchase_method = 'purchase'
+
+        self.env['res.currency.rate'].create([{
+            'name': date_po,
+            'rate': 1 / 1.5,
+            'currency_id': self.eur_currency.id,
+            'company_id': company.id,
+        }])
+
+        # Create PO
+        po = self.env['purchase.order'].create({
+            'currency_id': self.eur_currency.id,
+            'partner_id': self.partner_id.id,
+            'order_line': [
+                (0, 0, {
+                    'name': self.product1.name,
+                    'product_id': self.product1.id,
+                    'product_qty': 1.0,
+                    'product_uom': self.product1.uom_po_id.id,
+                    'price_unit': 100.0,  # 100€ = 150$
+                    'date_planned': date_po,
+                }),
+            ],
+        })
+        po.button_confirm()
+
+        # Create and post the vendor bill before recieving the product
+        self.env['account.move'].with_context(default_move_type='in_invoice').create({
+            'move_type': 'in_invoice',
+            'invoice_date': date_po,
+            'date': date_po,
+            'currency_id': self.usd_currency.id,
+            'partner_id': self.partner_id.id,
+            'invoice_line_ids': [(0, 0, {
+                'name': 'Test',
+                'price_unit': 100.0,  # 100$
+                'product_id': self.product1.id,
+                'purchase_line_id': po.order_line.id,
+                'quantity': 1.0,
+                'account_id': self.stock_input_account.id,
+            })]
+        }).action_post()
+
+        receipt = po.picking_ids
+        receipt.move_ids.picked = True
+        receipt.button_validate()
+
+        product_aml = po.invoice_ids.line_ids.filtered('product_id')
+        self.assertEqual(receipt.move_ids.stock_valuation_layer_ids.value, 100)
+        self.assertTrue(product_aml.reconciled)
+        self.assertTrue(product_aml.full_reconcile_id)
+
     def test_valuation_rounding(self):
         company = self.env.user.company_id
         company.anglo_saxon_accounting = True
@@ -2996,6 +3061,97 @@ class TestStockValuationWithCOA(AccountTestInvoicingCommon):
             {'debit': 30,   'credit': 0,    'account_id': stock_in_id,  'reconciled': True, 'amount_currency': 90},
             {'debit': 15,   'credit': 0,    'account_id': stock_in_id,  'reconciled': True, 'amount_currency': 0},
             {'debit': 0,    'credit': 45,   'account_id': stock_in_id,  'reconciled': True, 'amount_currency': -90},
+        ])
+
+    def test_invoice_first_receipt_later_with_multicurrency_different_dates(self):
+        """Ensure sure that use currency rate at bill date rather than the current date when invoice before receipt"""
+        company = self.env.user.company_id
+        company.anglo_saxon_accounting = False
+        company.currency_id = self.usd_currency
+
+        self.product1.detailed_type = 'product'
+        self.product1.purchase_method = 'purchase'
+
+        self.product1.with_company(company).categ_id.property_cost_method = 'fifo'
+        self.product1.with_company(company).categ_id.property_valuation = 'real_time'
+
+
+        po_date = '2023-10-01'
+        bill_date = '2023-10-15'
+        receipt_date = '2023-10-31'
+
+        po_rate = 0.8
+        bill_rate = 2.0
+        receipt_rate = 2.2
+
+        self.env['res.currency.rate'].search([]).unlink()
+        self.env['res.currency.rate'].create([
+            {
+                'name': po_date,
+                'rate': po_rate,
+                'currency_id': self.eur_currency.id,
+                'company_id': company.id,
+            },
+            {
+                'name': bill_date,
+                'rate': bill_rate,
+                'currency_id': self.eur_currency.id,
+                'company_id': company.id,
+            },
+            {
+                'name': receipt_date,
+                'rate': receipt_rate,
+                'currency_id': self.eur_currency.id,
+                'company_id': company.id,
+            },
+        ])
+
+        with freeze_time(po_date):
+            purchase_price = 100
+            po = self.env['purchase.order'].create({
+                'partner_id': self.partner_id.id,
+                'currency_id': self.eur_currency.id,
+                'order_line': [
+                    Command.create({
+                        'product_id': self.product1.id,
+                        'product_qty': 1.0,
+                        'price_unit': purchase_price,
+                        'taxes_id': False,
+                    }),
+                ]
+            })
+            po.button_confirm()
+
+        with freeze_time(bill_date):
+            po.action_create_invoice()
+            bill = po.invoice_ids
+            bill.invoice_date = bill_date
+            bill.action_post()
+
+        with freeze_time(receipt_date):
+            receipt = po.picking_ids
+            receipt.move_ids.write({'quantity': 1.0})
+            receipt.button_validate()
+
+        product_accounts = self.product1.product_tmpl_id.get_product_accounts()
+        payable_id = self.company_data['default_account_payable'].id
+        stock_in_id = product_accounts['stock_input'].id
+        expense_id = product_accounts['expense'].id
+        stock_valuation = product_accounts['stock_valuation'].id
+
+        # 1 Units invoiced at rate 2 and unit price 100 = 50
+        self.assertRecordValues(bill.line_ids, [
+            # pylint: disable=bad-whitespace
+            {'debit': 50.0,    'credit': 0,    'account_id': expense_id,   'reconciled': False,    'amount_currency':  100.0},
+            {'debit': 0,        'credit': 50.0,  'account_id': payable_id,   'reconciled': False,    'amount_currency': -100.0},
+        ])
+
+        layer_receipt = receipt.move_ids.stock_valuation_layer_ids
+
+        self.assertRecordValues(layer_receipt.account_move_id.line_ids, [
+            # pylint: disable=bad-whitespace
+            {'debit': 0,   'credit': 50.0,    'account_id': stock_in_id,  'reconciled': False, 'amount_currency': -110.0},
+            {'debit': 50.0,   'credit': 0,    'account_id': stock_valuation,  'reconciled': False, 'amount_currency': 110.0},
         ])
 
     def test_analytic_distribution_propagation_with_exchange_difference(self):

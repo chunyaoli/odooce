@@ -79,10 +79,22 @@ class AccountMove(models.Model):
         copy=False,
         tracking=True,
     )
+
+    # A dict with the following structure:
+    # {
+    #     'error_title': the main heading of the message
+    #     'errors': a list of message items
+    #     'blocking_level': {'error' | 'warning' | None}
+    #         directs which blocking behaviour to adopt in the Send and Print:
+    #         * error: blocks PDF generation and sending by e-mail
+    #         * warning: PDF is generated and sent by e-mail, but a warning appears in the banner
+    #         * None: PDF is generated and sent by e-mail, no warning appears
+    # }
     l10n_hu_edi_messages = fields.Json(
         string='Transaction messages (JSON)',
         copy=False,
     )
+
     l10n_hu_invoice_chain_index = fields.Integer(
         string='Invoice Chain Index',
         help="""
@@ -134,7 +146,7 @@ class AccountMove(models.Model):
     @api.depends('name')
     def _compute_l10n_hu_edi_attachment_filename(self):
         for move in self:
-            move.l10n_hu_edi_attachment_filename = f'{move.name.replace("/", "_")}.xml'
+            move.l10n_hu_edi_attachment_filename = f'{move.name.replace("/", "_")}.xml' if move.name else 'nav30.xml'
 
     # === Overrides === #
 
@@ -253,8 +265,8 @@ class AccountMove(models.Model):
     def _l10n_hu_get_currency_rate(self):
         """ Get the invoice currency / HUF rate.
 
-        If the company currency is HUF, we estimate this based on the invoice lines,
-        using a MMSE estimator.
+        If the company currency is HUF, we estimate this based on the invoice lines
+        (or if this is not an invoice, based on the AMLs), using a MMSE estimator.
 
         If the company currency is not HUF (e.g. Hungarian companies that do their accounting in euro),
         we get the rate from the currency rates.
@@ -262,7 +274,7 @@ class AccountMove(models.Model):
         if self.currency_id.name == 'HUF':
             return 1
         if self.company_id.currency_id.name == 'HUF':
-            squared_amount_currency = sum(line.amount_currency ** 2 for line in self.invoice_line_ids)
+            squared_amount_currency = sum(line.amount_currency ** 2 for line in (self.invoice_line_ids or self.line_ids))
             squared_balance = sum(line.balance ** 2 for line in self.invoice_line_ids)
             return math.sqrt(squared_balance / squared_amount_currency)
         return self.env['res.currency']._get_conversion_rate(
@@ -303,8 +315,11 @@ class AccountMove(models.Model):
     # === EDI: Flow === #
 
     def _l10n_hu_edi_check_invoices(self):
-        errors = []
         hu_vat_regex = re.compile(r'\d{8}-[1-5]-\d{2}')
+        hu_bank_account_regex = re.compile(r'\d{8}-\d{8}-\d{8}|\d{8}-\d{8}|[A-Z]{2}\d{2}[0-9A-Za-z]{11,30}')
+
+        # This contains all the advance invoices that correspond to final invoices in `self`.
+        advance_invoices = self.filtered(lambda m: not m._is_downpayment()).invoice_line_ids._get_downpayment_lines().mapped('move_id')
 
         checks = {
             'company_vat_missing': {
@@ -331,6 +346,11 @@ class AccountMove(models.Model):
                 'records': self.company_id.filtered(lambda c: c.currency_id.name != 'HUF'),
                 'message': _('Please use HUF as company currency!'),
                 'action_text': _('View Company/ies'),
+            },
+            'partner_bank_account_invalid': {
+                'records': self.partner_bank_id.filtered(lambda p: not hu_bank_account_regex.fullmatch(p.acc_number)),
+                'message': _('Please set a valid recipient bank account number!'),
+                'action_text': _('View partner(s)'),
             },
             'partner_vat_missing': {
                 'records': self.partner_id.commercial_partner_id.filtered(
@@ -377,6 +397,17 @@ class AccountMove(models.Model):
                 ]),
                 'message': _('The following invoices appear to be earlier in the chain, but have not yet been sent. Please send them first.'),
                 'action_text': _('View invoice(s)'),
+            },
+            'invoice_advance_not_paid': {
+                'records': advance_invoices.filtered(
+                    lambda m: (
+                        m.payment_state not in ['in_payment', 'paid', 'partial']
+                        or m.l10n_hu_edi_state in [False, 'rejected', 'cancelled']
+                            and m not in self  # It's okay to send an advance and a final invoice together, as we sort by id before sending.
+                    )
+                ),
+                'message': _('All advance invoices must be paid and sent to NAV before the final invoice is issued.'),
+                'action_text': _('View advance invoice(s)'),
             },
             'invoice_line_not_one_vat_tax': {
                 'records': self.filtered(
@@ -482,15 +513,7 @@ class AccountMove(models.Model):
         invoice_operations = [
             {
                 'index': invoice.l10n_hu_edi_batch_upload_index,
-                'operation': (
-                    'CREATE' if (base_invoice := invoice._l10n_hu_get_chain_base()) == invoice else (
-                        'STORNO' if (
-                            base_invoice._get_reconciled_amls().move_id == invoice
-                            and invoice.currency_id.is_zero(invoice.amount_residual)
-                            and base_invoice.currency_id.is_zero(base_invoice.amount_residual)
-                        ) else 'MODIFY'
-                    )
-                ),
+                'operation': 'CREATE' if invoice._l10n_hu_get_chain_base() == invoice else 'MODIFY',
                 'invoice_data': base64.b64decode(invoice.l10n_hu_edi_attachment),
             }
             for invoice in self
@@ -512,7 +535,7 @@ class AccountMove(models.Model):
                     'l10n_hu_edi_messages': {
                         'error_title': _('Invoice submission timed out. Please wait at least 6 minutes, then update the status.'),
                         'errors': e.errors,
-                        'blocking_level': 'error_but_continue',
+                        'blocking_level': 'warning',
                     },
                 })
             return self.write({
@@ -561,7 +584,7 @@ class AccountMove(models.Model):
                     'l10n_hu_edi_messages': {
                         'error_title': _('The invoice was sent to the NAV, but there was an error querying its status.'),
                         'errors': e.errors,
-                        'blocking_level': 'error_but_continue',
+                        'blocking_level': 'warning',
                     },
                 })
             else:
@@ -569,7 +592,7 @@ class AccountMove(models.Model):
                     'l10n_hu_edi_messages': {
                         'error_title': _('The annulment was sent to the NAV, but there was an error querying its status.'),
                         'errors': e.errors,
-                        'blocking_level': 'error_but_continue',
+                        'blocking_level': 'warning',
                     },
                 })
 
@@ -600,7 +623,7 @@ class AccountMove(models.Model):
                     'l10n_hu_edi_messages': {
                         'error_title': _('The invoice was received by the NAV, but has not been confirmed yet.'),
                         'errors': get_errors_from_processing_result(processing_result),
-                        'blocking_level': 'error_but_continue',
+                        'blocking_level': 'warning',
                     },
                 })
             elif self.l10n_hu_edi_state in ['cancel_sent', 'cancel_timeout']:
@@ -609,7 +632,7 @@ class AccountMove(models.Model):
                     'l10n_hu_edi_messages': {
                         'error_title': _('The annulment request was received by the NAV, but has not been confirmed yet.'),
                         'errors': get_errors_from_processing_result(processing_result),
-                        'blocking_level': 'error_but_continue',
+                        'blocking_level': 'warning',
                     },
                 })
 
@@ -632,7 +655,7 @@ class AccountMove(models.Model):
                                 'To reverse, create a credit note / debit note.'
                             ),
                             'errors': get_errors_from_processing_result(processing_result),
-                            'blocking_level': 'error_but_continue',
+                            'blocking_level': 'warning',
                         },
                     })
             elif self.l10n_hu_edi_state in ['cancel_sent', 'cancel_timeout', 'cancel_pending']:
@@ -642,7 +665,7 @@ class AccountMove(models.Model):
                         'l10n_hu_edi_messages': {
                             'error_title': _('The annulment request was rejected by NAV.'),
                             'errors': get_errors_from_processing_result(processing_result),
-                            'blocking_level': 'error_but_continue',
+                            'blocking_level': 'error',
                         },
                     })
                 elif annulment_status == 'VERIFICATION_PENDING':
@@ -651,7 +674,7 @@ class AccountMove(models.Model):
                         'l10n_hu_edi_messages': {
                             'error_title': _('The annulment request is pending, please confirm it on the OnlineSzámla portal.'),
                             'errors': get_errors_from_processing_result(processing_result),
-                            'blocking_level': 'error_but_continue',
+                            'blocking_level': 'warning',
                         }
                     })
                 elif annulment_status == 'VERIFICATION_DONE':
@@ -744,7 +767,7 @@ class AccountMove(models.Model):
                     'l10n_hu_edi_messages': {
                         'error_title': _('Cancellation request timed out. Please wait at least 6 minutes, then update the status.'),
                         'errors': e.errors,
-                        'blocking_level': 'error_but_continue',
+                        'blocking_level': 'warning',
                     },
                 })
             return self.write({
@@ -855,20 +878,24 @@ class AccountMove(models.Model):
             }
 
             if 'is_downpayment' in line and line.is_downpayment:
-                advance_invoices = line._get_downpayment_lines().mapped('move_id').filtered(lambda m: m.state == 'posted') - self
+                # Advance and final invoices.
+                line_values['advanceIndicator'] = True
 
-                # Advance invoices case 1: this is an advance invoice
-                if not advance_invoices:
-                    line_values['advanceIndicator'] = True
+                if not self._is_downpayment():
+                    # This is a final invoice that deducts one or more advance invoices.
+                    # In this case, we add a reference to the *last-paid* advance invoice (NAV only allows us to report one) if one exists,
+                    # otherwise we don't add anything.
 
-                # Advance invoices case 2: this is a final invoice that deducts an advance invoice
-                else:
-                    line_values.update({
-                        'advanceIndicator': True,
-                        'advanceOriginalInvoice': advance_invoices[0].name,
-                        'advancePaymentDate': advance_invoices[0].invoice_date,
-                        'advanceExchangeRate': advance_invoices[0]._l10n_hu_get_currency_rate(),
-                    })
+                    advance_invoices = line._get_downpayment_lines().mapped('move_id').filtered(lambda m: m.state == 'posted')
+                    reconciled_moves = advance_invoices._get_reconciled_amls().move_id
+                    last_reconciled_payment = reconciled_moves.filtered(lambda m: m.payment_id or m.statement_line_id).sorted('date', reverse=True)[:1]
+
+                    if last_reconciled_payment:
+                        line_values.update({
+                            'advanceOriginalInvoice': advance_invoices.filtered(lambda m: last_reconciled_payment in m._get_reconciled_amls().move_id)[0].name,
+                            'advancePaymentDate': last_reconciled_payment.date,
+                            'advanceExchangeRate': last_reconciled_payment._l10n_hu_get_currency_rate(),
+                        })
 
             if line.display_type == 'product':
                 vat_tax = line.tax_ids.filtered(lambda t: t.l10n_hu_tax_type)
@@ -896,9 +923,16 @@ class AccountMove(models.Model):
                 })
 
             elif line.display_type == 'rounding':
-                atk_tax = self.env['account.tax'].search([('l10n_hu_tax_type', '=', 'ATK'), ('company_id', '=', self.company_id.id)], limit=1)
+                atk_tax = self.env['account.tax'].search(
+                    [
+                        ('type_tax_use', '=', 'sale'),
+                        ('l10n_hu_tax_type', '=', 'ATK'),
+                        ('company_id', '=', self.company_id.id),
+                    ],
+                    limit=1,
+                )
                 if not atk_tax:
-                    raise UserError(_('Please create an ATK (outside the scope of the VAT Act) type of tax!'))
+                    raise UserError(_('Please create a sales tax with type ATK (outside the scope of the VAT Act).'))
 
                 amount_huf = line.balance if self.company_id.currency_id == currency_huf else currency_huf.round(line.amount_currency * currency_rate)
                 line_values.update({

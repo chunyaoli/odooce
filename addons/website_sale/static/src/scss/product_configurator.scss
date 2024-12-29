@@ -50,6 +50,10 @@
         display: block;
     }
 
+    .availability_messages {
+        display: none;
+    }
+
     .js_add,
     .oe_price,
     .oe_default_price,
@@ -244,6 +248,12 @@ label.css_attribute_color.css_not_available {
 
 .modal.o_technical_modal .oe_advanced_configurator_modal .btn.js_add_cart_json {
     padding: 0.075rem 0.75rem;
+}
+
+@include media-breakpoint-down(md) {
+    .oe_advanced_configurator_modal th.td-img + th {
+        display: none;
+    }
 }
 
 .js_product {
