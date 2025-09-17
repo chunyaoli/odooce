@@ -1,0 +1,6 @@
+[submodule "gar-addon"]
+	path = gar-addon
+	url = https://github.com/chunyaoli/gar-addon.git
+[submodule "minishop"]
+	path = minishop
+	url = https://github.com/chunyaoli/minishop.git

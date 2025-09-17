@@ -815,6 +815,8 @@ class PoFileReader:
 
             # in case of moduleS keep only the first
             match = re.match(r"(module[s]?): (\w+)", entry.comment)
+            if not match:
+                continue  # Skip entries without valid module information
             _, module = match.groups()
             comments = "\n".join([c for c in entry.comment.split('\n') if not c.startswith('module:')])
             source = entry.msgid

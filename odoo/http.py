@@ -1974,8 +1974,8 @@ class Request:
                 self.env = self.env(cr=cr)
                 try:
                     return service_model.retrying(func, env=self.env)
-                except psycopg2.errors.ReadOnlySqlTransaction as exc:
-                    _logger.warning("%s, retrying with a read/write cursor", exc.args[0].rstrip(), exc_info=True)
+                except (psycopg2.errors.ReadOnlySqlTransaction, psycopg2.errors.InFailedSqlTransaction) as exc:
+                    _logger.warning("%s, retrying with a new cursor", exc.args[0].rstrip(), exc_info=True)
                     continue
                 except Exception as exc:
                     if isinstance(exc, HTTPException) and exc.code is None:
