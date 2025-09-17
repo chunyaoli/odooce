@@ -1967,7 +1967,7 @@ msgstr "Continuar"
 #. odoo-javascript
 #: code:addons/web/static/src/views/fields/x2many/x2many_field.xml:0
 msgid "Control panel buttons"
-msgstr "Botons del panel de control"
+msgstr "Botons del panell de control"
 
 #. module: web
 #. odoo-javascript
@@ -4039,7 +4039,7 @@ msgstr "Drac vermell de Mahjong"
 #. odoo-javascript
 #: code:addons/web/static/src/core/errors/error_dialogs.js:0
 msgid "MailDeliveryException"
-msgstr "MailDeliveryExption"
+msgstr "MailDeliveryException"
 
 #. module: web
 #. odoo-javascript
@@ -6203,7 +6203,7 @@ msgstr "Mostra sub-camps"
 #. odoo-javascript
 #: code:addons/web/static/src/views/fields/datetime/datetime_field.js:0
 msgid "Show time"
-msgstr ""
+msgstr "Mostrar hora"
 
 #. module: web
 #. odoo-javascript
@@ -20494,7 +20494,7 @@ msgstr "profecia"
 #. odoo-javascript
 #: code:addons/web/static/src/views/fields/many2many_tags_avatar/many2many_tags_avatar_field.xml:0
 msgid "props.placeholder"
-msgstr ""
+msgstr "props.placeholder"
 
 #. module: web
 #. odoo-javascript

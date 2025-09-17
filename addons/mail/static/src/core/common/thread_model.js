@@ -430,7 +430,7 @@ export class Thread extends Record {
     }
 
     get correspondents() {
-        return this.channelMembers.filter(({ persona }) => persona.notEq(this.store.self));
+        return this.channelMembers.filter(({ persona }) => persona?.notEq(this.store.self));
     }
 
     computeCorrespondent() {
@@ -677,6 +677,7 @@ export class Thread extends Record {
         try {
             const { data, messages } = await this.fetchMessagesData({ after, around, before });
             this.store.insert(data, { html: true });
+            this.hasLoadingFailed = false;
             return this.store.Message.insert(messages.reverse());
         } catch (e) {
             this.hasLoadingFailed = true;
@@ -765,6 +766,7 @@ export class Thread extends Record {
      * the cookie-authenticated persona and the partner authenticated with the
      * portal token in the context of this thread.
      *
+     * @deprecated
      * @returns {import("models").Persona[]}
      */
     get selves() {

@@ -15,13 +15,13 @@
 # Ramiz Deniz Öner <deniz@denizoner.com>, 2024
 # Umur Akın <umura@projetgrup.com>, 2024
 # Yedigen, 2024
+# Nadir Gazioglu <nadirgazioglu@gmail.com>, 2024
 # Sinem Cil, 2024
 # abc Def <hdogan1974@gmail.com>, 2024
 # Güven YILMAZ <guvenyilmaz@outlook.com.tr>, 2024
 # Levent Karakaş <levent@mektup.at>, 2024
 # Martin Trigaux, 2024
 # Ozlem Cikrikci <ozlemc@eskayazilim.com.tr>, 2024
-# Nadir Gazioglu <nadirgazioglu@gmail.com>, 2024
 # Murat Durmuş <muratd@projetgrup.com>, 2024
 # Murat Kaplan <muratk@projetgrup.com>, 2024
 # Saban Yildiz <sabany@projetgrup.com>, 2024
@@ -3720,13 +3720,13 @@ msgid ""
 " dates and keep you informed in case of any delays. To get the vendor's "
 "performance statistics, click on the OTD rate."
 msgstr ""
-"Bir satınalma siparişi oluştururken, tedarikçinin <i>Zamanında Teslimat</i> "
-"oranına bir göz atın: zamanında sevk edilen ürünlerin yüzdesi çok düşükse, "
-"<i>otomatik hatırlatıcıları</i> etkinleştirin. Vadesi dolan sevkiyattan "
-"birkaç gün önce, Odoo tedarikçiye gönderi tarihlerinin onayını istemek için "
-"bir e-posta gönderecek ve herhangi bir gecikme durumunda sizi "
-"bilgilendirecektir. Tedarikçinin performans istatistiklerini almak için OTD "
-"oranına tıklayın."
+"Bir satın alma siparişi oluştururken, tedarikçinin <i>Zamanında Teslimat "
+"oranına (OTD)</i> göz atın: bu oran, zamanında sevk edilen ürünlerin "
+"yüzdesidir. Bu oran çok düşükse, <i>otomatik hatırlatıcıları</i> "
+"etkinleştirin. Sevkiyat tarihinden birkaç gün önce, Odoo tedarikçiye bir "
+"e-posta göndererek teslimat tarihini onaylamasını ister ve herhangi bir "
+"gecikme durumunda sizi bilgilendirir. Tedarikçinin performans "
+"istatistiklerine ulaşmak için OTD oranına tıklayın."
 
 #. module: purchase
 #: model_terms:digest.tip,tip_description:purchase.digest_tip_purchase_1
@@ -3762,8 +3762,8 @@ msgid ""
 "You cannot change the type of a purchase order line. Instead you should "
 "delete the current line and create a new line of the proper type."
 msgstr ""
-"Bir satın alma siparişi satırının türünü değiştiremezsiniz. Bunun yerine "
-"mevcut satırı silmeli ve uygun türde yeni bir satır oluşturmalısınız."
+"Satın alma siparişi satırının türünü değiştiremezsiniz. Bunun yerine, mevcut"
+" satırı silip uygun türde yeni bir satır oluşturmalısınız."
 
 #. module: purchase
 #: model_terms:ir.ui.view,arch_db:purchase.portal_my_purchase_order

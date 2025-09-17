@@ -65,7 +65,7 @@ class SaleOrder(models.Model):
         UPDATE sale_order so
         SET warehouse_id = COALESCE(wh.id, %s)
         FROM stock_warehouse wh
-        WHERE so.company_id = wh.company_id
+        WHERE so.company_id = wh.company_id and so.warehouse_id IS NULL and wh.active
         """
         params = [default_warehouse.id]
 
@@ -262,6 +262,7 @@ class SaleOrder(models.Model):
     def _prepare_invoice(self):
         invoice_vals = super(SaleOrder, self)._prepare_invoice()
         invoice_vals['invoice_incoterm_id'] = self.incoterm.id
+        invoice_vals['delivery_date'] = self.effective_date
         return invoice_vals
 
     def _log_decrease_ordered_quantity(self, documents, cancel=False):
