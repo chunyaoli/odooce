@@ -171,4 +171,8 @@ def push_to_end_point(base_url, device, payload, vapid_private_key, vapid_public
 
         # Invalid subscription
         if response.status_code == 404 or response.status_code == 410:
+            _logger.warning('Subscription expired or invalid for endpoint: %s', endpoint)
+            # Mark the device as unreachable in the database
+            if hasattr(device, 'write'):
+                device.write({'active': False})
             raise DeviceUnreachableError("Device Unreachable")

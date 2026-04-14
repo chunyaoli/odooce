@@ -37,6 +37,25 @@ class PaymentTransaction(models.Model):
                     raise ValidationError(_('The payment transaction (%d) has a negative amount.', tx.id))
 
                 if not tx.payment_id: # the payment could already have been created by account_payment module
+                    # 确保支付方法行存在
+                    payment_method_line = tx.provider_id.journal_id.inbound_payment_method_line_ids.filtered(
+                        lambda l: l.payment_provider_id == tx.provider_id
+                    )
+                    if not payment_method_line:
+                        # 如果没有找到支付方法行，创建一个
+                        payment_method = self.env['account.payment.method'].search(
+                            [('code', '=', tx.provider_id.code), ('payment_type', '=', 'inbound')],
+                            limit=1
+                        )
+                        if payment_method:
+                            payment_method_line = self.env['account.payment.method.line'].create({
+                                'name': payment_method.name,
+                                'journal_id': tx.provider_id.journal_id.id,
+                                'payment_method_id': payment_method.id,
+                                'payment_provider_id': tx.provider_id.id,
+                            })
+                    
+                    # 创建支付
                     tx._create_payment()
                 if not tx.payment_id:
                     raise ValidationError(_('The POS online payment (tx.id=%d) could not be saved correctly', tx.id))

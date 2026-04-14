@@ -4,3 +4,6 @@
 [submodule "minishop"]
 	path = minishop
 	url = https://github.com/chunyaoli/minishop.git
+[submodule "shopapp"]
+	path = shopapp
+	url = https://github.com/chunyaoli/shopapp.git
